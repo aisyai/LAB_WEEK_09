@@ -1,6 +1,7 @@
 package com.example.lab_week_09
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.runtime.remember // Added import for remember
 import androidx.compose.runtime.snapshots.SnapshotStateList // Added import for SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -34,6 +36,8 @@ import com.example.lab_week_09.ui.theme.LAB_WEEK_09Theme
 import com.example.lab_week_09.ui.theme.OnBackgroundTitleText
 import com.example.lab_week_09.ui.theme.PrimaryTextButton
 import com.example.lab_week_09.ui.theme.OnBackgroundItemText
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +85,8 @@ fun Home(
         )
     }
 
+    val context = LocalContext.current
+
     // Here, we create a mutable state of Student
     // This is so that we can get the value of the input field
     var inputField = remember { mutableStateOf(Student("")) }
@@ -99,14 +105,31 @@ fun Home(
             if (inputField.value.name.isNotBlank()) {
                 listData.add(inputField.value)
                 inputField.value = Student("")
+            } else {
+                Toast.makeText(
+                    context,
+                    "Name cannot be blank!",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         },
-        // Pastikan lambda navigasi ini dilewatkan sebagai ARGUMEN KELIMA:
+
         navigateFromHomeToResult = {
-            // 1. Konversi listData (SnapshotStateList<Student>) menjadi String
-            val listDataString = listData.toList().toString()
-            // 2. Panggil lambda yang diterima Home dari App (yang berisi navController.navigate)
-            navigateFromHomeToResult(listDataString)
+            // 1. Setup Moshi
+            val moshi = Moshi.Builder()
+                .add(KotlinJsonAdapterFactory())
+                .build()
+
+            // 2. Buat Adapter untuk List<Student>
+            // Perhatikan: Kita harus menggunakan tipe List<Student> untuk adapter, bukan SnapshotStateList
+            val type = com.squareup.moshi.Types.newParameterizedType(List::class.java, Student::class.java)
+            val adapter = moshi.adapter<List<Student>>(type)
+
+            // 3. Konversi listData ke JSON String
+            val jsonList = adapter.toJson(listData.toList())
+
+            // 4. Navigasi dengan String JSON
+            navigateFromHomeToResult(jsonList)
         }
     )
 }
@@ -120,6 +143,7 @@ fun HomeContent(
     onButtonClick: () -> Unit,
     navigateFromHomeToResult: () -> Unit
 ) {
+
     // Here, we use LazyColumn to display a list of items Lazily
     LazyColumn {
         //Here, we use item to display an item inside the LazyColumn
@@ -152,10 +176,12 @@ fun HomeContent(
                 ),
                 //Set what happens when the value of the input field changes
                 onValueChange = {
+                    val cleanInput = it.replace("\n", "")
+                    onInputValueChange(cleanInput)
                     //Here, we call the onInputValueChange lambda function
                     //and pass the value of the input field as a parameter
                     //This is so that we can update the value of the inputField
-                    onInputValueChange(it)
+                    // onInputValueChange(it)
                 }
             )
 
@@ -255,14 +281,45 @@ fun App(navController: NavHostController) {
 //ResultContent accepts a String parameter called listData from the Home composable
 //then displays the value of listData to the screen
 @Composable
-fun ResultContent(listData: String) {
+fun ResultContent(listDataJson: String) {
+
+    // 1. Setup Moshi (Sama seperti di Home)
+    val moshi = Moshi.Builder()
+        .add(KotlinJsonAdapterFactory())
+        .build()
+
+    // 2. Buat Adapter untuk List<Student>
+    val type = com.squareup.moshi.Types.newParameterizedType(List::class.java, Student::class.java)
+    val adapter = moshi.adapter<List<Student>>(type)
+
+    // 3. Deserialisasi JSON String kembali menjadi List<Student>?
+    // Kita perlu menangani potensi error parsing, default ke list kosong jika gagal
+    val studentList: List<Student> = adapter.fromJson(listDataJson) ?: emptyList()
+
     Column(
         modifier = Modifier
             .padding(vertical = 4.dp)
             .fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Here, we call the OnBackgroundItemText UI Element
-        OnBackgroundItemText(text = listData)
+        // Tampilkan Judul (Opsional, Anda bisa menambahkan judul di sini)
+        OnBackgroundTitleText(text = "Hasil Data Mahasiswa")
+
+        // 4. Gunakan LazyColumn untuk menampilkan List<Student>
+        LazyColumn(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(studentList) { item ->
+                Column(
+                    modifier = Modifier
+                        .padding(vertical = 4.dp)
+                        .fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Here, we call the OnBackgroundItemText UI Element
+                    OnBackgroundItemText(text = item.name)
+                }
+            }
+        }
     }
 }
